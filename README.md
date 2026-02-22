@@ -45,6 +45,52 @@ python research.py
 
 Use **Space** to select pages in the TUI, **Enter** to confirm and start processing.
 
+## Background Daemon
+
+The daemon runs the research pipeline automatically on a schedule and sends a nightly email digest.
+
+```bash
+python daemon.py
+```
+
+The daemon:
+- Polls Notion every N hours (default: 3) for unresearched pages
+- Processes them oldest-first and appends results to `data/queue.json`
+- Sends a digest email at a configured hour (default: 18:00) then clears the queue
+- Writes rotating logs to `data/daemon.log` (10 MB × 3 backups)
+- Responds to `SIGTERM` (graceful shutdown) and `SIGUSR1` (run cycle immediately)
+
+Add these to your `.env` for digest emails:
+```env
+GMAIL_USER=you@gmail.com
+GMAIL_APP_PASSWORD=your-google-app-password
+```
+
+## Dashboard
+
+The TUI dashboard lets you monitor and control the daemon interactively:
+
+```bash
+python dashboard.py
+```
+
+Actions available: start/stop/restart daemon, trigger an immediate cycle, change interval or email hour, view full logs.
+
+## Auto-start on login (macOS)
+
+Run once after install to register a launchd agent that starts the daemon on login:
+
+```bash
+bash setup_autostart.sh
+```
+
+Verify:
+```bash
+launchctl list | grep kindling
+```
+
+> **Note:** `setup_autostart.sh` uses `pyenv which python3` to get the absolute Python binary path, since launchd doesn't source `~/.zshrc`.
+
 ## Running tests
 
 Unit tests (no API calls):

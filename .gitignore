@@ -3,3 +3,7 @@
 __pycache__/
 .pytest_cache/
 *.pyc
+data/daemon.pid
+data/*.log
+data/launchd.stdout.log
+data/launchd.stderr.log

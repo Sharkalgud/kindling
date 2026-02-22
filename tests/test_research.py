@@ -320,21 +320,20 @@ def test_estimate_cost_only_research():
 
 def test_graph_no_questions():
     """When extraction finds no questions, research node must not be called."""
-    with (
-        patch.object(research, "_anthropic_client") as mock_ant,
-        patch.object(research, "_openai_client") as mock_oai,
-        patch.object(research, "_notion"),
-        patch("research.write_results_to_notion") as mock_write,
-    ):
-        mock_message = MagicMock()
-        mock_message.content = [
-            MagicMock(text="I don't see any questions in this text.")
-        ]
-        mock_message.usage.input_tokens = 100
-        mock_message.usage.output_tokens = 20
-        mock_ant.messages.create.return_value = mock_message
+    mock_ant = MagicMock()
+    mock_oai = MagicMock()
+    mock_notion = MagicMock()
 
-        graph = research.build_research_graph()
+    mock_message = MagicMock()
+    mock_message.content = [
+        MagicMock(text="I don't see any questions in this text.")
+    ]
+    mock_message.usage.input_tokens = 100
+    mock_message.usage.output_tokens = 20
+    mock_ant.messages.create.return_value = mock_message
+
+    with patch("core.graph.write_results_to_notion") as mock_write:
+        graph = research.build_research_graph(mock_ant, mock_oai, mock_notion)
 
         initial_state: research.ResearchState = {
             "page_id": "test-id",
@@ -358,33 +357,32 @@ def test_graph_no_questions():
 
 def test_graph_with_questions():
     """When extraction finds questions, both research and write nodes must run."""
-    with (
-        patch.object(research, "_anthropic_client") as mock_ant,
-        patch.object(research, "_openai_client") as mock_oai,
-        patch.object(research, "_notion"),
-        patch("research.write_results_to_notion") as mock_write,
-    ):
-        mock_message = MagicMock()
-        mock_message.content = [
-            MagicMock(
-                text=(
-                    "I want to know why physical therapy practices don't follow the "
-                    "stretch lab model. Specifically, I am curious about the business "
-                    "model differences and patient outcomes."
-                )
+    mock_ant = MagicMock()
+    mock_oai = MagicMock()
+    mock_notion = MagicMock()
+
+    mock_message = MagicMock()
+    mock_message.content = [
+        MagicMock(
+            text=(
+                "I want to know why physical therapy practices don't follow the "
+                "stretch lab model. Specifically, I am curious about the business "
+                "model differences and patient outcomes."
             )
-        ]
-        mock_message.usage.input_tokens = 150
-        mock_message.usage.output_tokens = 50
-        mock_ant.messages.create.return_value = mock_message
+        )
+    ]
+    mock_message.usage.input_tokens = 150
+    mock_message.usage.output_tokens = 50
+    mock_ant.messages.create.return_value = mock_message
 
-        mock_response = MagicMock()
-        mock_response.output_text = "# Research Report\n\nHere are the findings..."
-        mock_response.usage.input_tokens = 500
-        mock_response.usage.output_tokens = 300
-        mock_oai.responses.create.return_value = mock_response
+    mock_response = MagicMock()
+    mock_response.output_text = "# Research Report\n\nHere are the findings..."
+    mock_response.usage.input_tokens = 500
+    mock_response.usage.output_tokens = 300
+    mock_oai.responses.create.return_value = mock_response
 
-        graph = research.build_research_graph()
+    with patch("core.graph.write_results_to_notion") as mock_write:
+        graph = research.build_research_graph(mock_ant, mock_oai, mock_notion)
 
         initial_state: research.ResearchState = {
             "page_id": "test-id",
