@@ -8,8 +8,10 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.email_utils import (
+    build_digest_html,
     build_digest_text,
     extract_up_to_tldr,
+    parse_research_sections,
     select_past_pages,
 )
 
@@ -111,14 +113,50 @@ def _make_record(title="Page A", url="https://notion.so/a", research_text=SAMPLE
 
 
 def test_build_digest_text_contains_titles():
-    """Digest includes title, URL, and cost; section 4 body should not appear."""
+    """Digest uses research headline as header; shows URL, cost, and sections 1-3."""
     queue = [_make_record("My Page", url="https://notion.so/page")]
     body = build_digest_text(queue)
-    assert "My Page" in body
+    # Headline from research (section 1) replaces the page title as the header
+    assert "Physical Therapy's Business Model" in body
     assert "https://notion.so/page" in body
     assert "$0.0123" in body
-    # Section 4 content should not be present (excerpt stops before it)
+    # Prompted By and TL;DR sections should be present
+    assert "Prompted By" in body
+    assert "TL;DR" in body
+    # Section 4 content should not appear
     assert "What I found" not in body
+
+
+def test_build_digest_html_uses_research_sections():
+    """HTML digest shows headline, Prompted By, TL;DR and a Read More button."""
+    queue = [_make_record("My Page", url="https://notion.so/page")]
+    html = build_digest_html(queue)
+    assert "Physical Therapy's Business Model" in html
+    assert "Prompted By" in html
+    assert "TL;DR" in html
+    assert "Read More" in html
+    assert "https://notion.so/page" in html
+
+
+# ---------------------------------------------------------------------------
+# parse_research_sections tests
+# ---------------------------------------------------------------------------
+
+
+def test_parse_research_sections_extracts_all():
+    """All three sections are extracted correctly."""
+    sections = parse_research_sections(SAMPLE_RESEARCH)
+    assert sections["headline"] == "Physical Therapy's Business Model Prevents the Stretch Lab Approach"
+    assert "Why don't PT practices" in sections["prompted_by"]
+    assert "PT clinics are reimbursement-driven" in sections["tldr"]
+
+
+def test_parse_research_sections_missing_returns_empty():
+    """Missing sections return empty strings rather than raising."""
+    sections = parse_research_sections("Some unstructured text with no sections.")
+    assert sections["headline"] == ""
+    assert sections["prompted_by"] == ""
+    assert sections["tldr"] == ""
 
 
 def test_build_digest_text_includes_errors():

@@ -17,6 +17,19 @@ def extract_up_to_tldr(research_text: str) -> str:
     return research_text[:1000]
 
 
+def parse_research_sections(research_text: str) -> dict:
+    """Extract Headline, Prompted By, and TL;DR sections from research markdown."""
+    def extract_section(pattern: str) -> str:
+        match = re.search(pattern, research_text, re.MULTILINE | re.DOTALL)
+        return match.group(1).strip() if match else ""
+
+    return {
+        "headline": extract_section(r"^## 1\) Headline\s*\n(.*?)(?=^## |\Z)"),
+        "prompted_by": extract_section(r"^## 2\) Prompted by\s*\n(.*?)(?=^## |\Z)"),
+        "tldr": extract_section(r"^## 3\) TL;DR\s*\n(.*?)(?=^## |\Z)"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Plain-text digest
 # ---------------------------------------------------------------------------
@@ -37,28 +50,48 @@ def build_digest_text(queue: list) -> str:
         any_error = record.get("any_error", "")
         processed_at = record.get("processed_at", "")
 
-        total_cost += cost or 0.0
-
-        lines.append(f"{title}")
-        if url:
-            lines.append(f"Notion: {url}")
-        if processed_at:
-            lines.append(f"Processed: {processed_at}")
-        lines.append(f"Cost: ${cost:.4f}")
-        lines.append("")
+        total_cost += cost or 0.0  # None-safe: None treated as 0
 
         if any_error:
             errors.append(f"  - {title}: {any_error}")
+            lines.append(f"{title}")
+            if url:
+                lines.append(f"Notion: {url}")
+            if processed_at:
+                lines.append(f"Processed: {processed_at}")
+            if cost is not None:
+                lines.append(f"Cost: ${cost:.4f}")
+            lines.append("")
             lines.append(f"[ERROR] {any_error}")
-        elif research_text:
-            excerpt = extract_up_to_tldr(research_text)
-            # Strip markdown syntax for plain text
-            excerpt = re.sub(r"\*\*\*(.+?)\*\*\*", r"\1", excerpt)
-            excerpt = re.sub(r"\*\*(.+?)\*\*", r"\1", excerpt)
-            excerpt = re.sub(r"\*(.+?)\*", r"\1", excerpt)
-            excerpt = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", excerpt)
-            excerpt = re.sub(r"^#{1,3} ", "", excerpt, flags=re.MULTILINE)
-            lines.append(excerpt)
+        else:
+            sections = parse_research_sections(research_text or "")
+            headline = sections["headline"] or title
+
+            def strip_md(text: str) -> str:
+                text = re.sub(r"\*\*\*(.+?)\*\*\*", r"\1", text)
+                text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+                text = re.sub(r"\*(.+?)\*", r"\1", text)
+                text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+                return text
+
+            lines.append(headline)
+            if url:
+                lines.append(f"Notion: {url}")
+            if processed_at:
+                lines.append(f"Processed: {processed_at}")
+            if cost is not None:
+                lines.append(f"Cost: ${cost:.4f}")
+            lines.append("")
+            if sections["prompted_by"]:
+                lines.append("Prompted By")
+                lines.append(strip_md(sections["prompted_by"]))
+                lines.append("")
+            if sections["tldr"]:
+                lines.append("TL;DR")
+                lines.append(strip_md(sections["tldr"]))
+                lines.append("")
+            if url:
+                lines.append(f"Read More: {url}")
 
         lines.append("")
         lines.append("-" * 40)
@@ -151,7 +184,7 @@ def build_digest_html(queue: list) -> str:
         title = record.get("title", "Untitled")
         url = record.get("url", "")
         research_text = record.get("research_text", "")
-        cost = record.get("cost", 0.0) or 0.0
+        cost = record.get("cost")
         any_error = record.get("any_error", "")
         processed_at = record.get("processed_at", "")
 
@@ -159,7 +192,8 @@ def build_digest_html(queue: list) -> str:
             f'<a href="{url}" style="color:#555;text-decoration:none;">Open in Notion ↗</a>'
             if url else ""
         )
-        meta_parts = [p for p in [notion_link, processed_at, f"${cost:.4f}"] if p]
+        cost_str = f"${cost:.4f}" if cost is not None else ""
+        meta_parts = [p for p in [notion_link, processed_at, cost_str] if p]
         meta = ' &nbsp;·&nbsp; '.join(meta_parts)
 
         if any_error:
@@ -169,17 +203,32 @@ def build_digest_html(queue: list) -> str:
                 f'border-radius:4px;margin:12px 0;">'
                 f'<strong>Error:</strong> {any_error}</p>'
             )
-        elif research_text:
-            excerpt = extract_up_to_tldr(research_text)
-            content_html = _markdown_to_html(excerpt)
-        else:
-            content_html = '<p style="color:#888;">No content available.</p>'
-
-        pages_html.append(f"""
+            pages_html.append(f"""
         <div style="margin-bottom:40px;padding-bottom:40px;border-bottom:1px solid #e8e8e8;">
           <h2 style="font-size:20px;margin:0 0 6px;font-family:Georgia,serif;">{title}</h2>
           <p style="font-size:13px;color:#999;margin:0 0 18px;">{meta}</p>
           {content_html}
+        </div>""")
+        else:
+            sections = parse_research_sections(research_text or "")
+            headline = sections["headline"] or title
+            prompted_by_html = _markdown_to_html(sections["prompted_by"]) if sections["prompted_by"] else ""
+            tldr_html = _markdown_to_html(sections["tldr"]) if sections["tldr"] else ""
+            read_more = (
+                f'<a href="{url}" style="display:inline-block;background:#1a1a1a;color:#ffffff;'
+                f'padding:8px 18px;border-radius:4px;text-decoration:none;font-size:12px;'
+                f'font-weight:bold;margin-top:20px;">Read More ↗</a>'
+                if url else ""
+            )
+            pages_html.append(f"""
+        <div style="margin-bottom:40px;padding-bottom:40px;border-bottom:1px solid #e8e8e8;">
+          <h2 style="font-size:20px;margin:0 0 6px;font-family:Georgia,serif;">{headline}</h2>
+          <p style="font-size:13px;color:#999;margin:0 0 18px;">{meta}</p>
+          <h3 style="font-size:15px;margin:0 0 6px;">Prompted By</h3>
+          {prompted_by_html}
+          <h3 style="font-size:15px;margin:18px 0 6px;">TL;DR</h3>
+          {tldr_html}
+          {read_more}
         </div>""")
 
     errors_section = ""

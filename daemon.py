@@ -314,7 +314,7 @@ def maybe_send_digest(logger: logging.Logger, email_hour: int) -> None:
                 "title": page_title,
                 "url": page_url,
                 "research_text": research_text,
-                "cost": 0.0,
+                "cost": None,
                 "processed_at": p.get("created_time", "")[:10],
                 "any_error": None,
             })
