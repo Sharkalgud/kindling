@@ -32,6 +32,7 @@ from core.config import (
 from core.notion_utils import (
     init_notion_client,
     fetch_research_pages,
+    fetch_past_researched_pages,
     has_kindling_results_block,
     get_page_title,
     get_page_url,
@@ -39,7 +40,7 @@ from core.notion_utils import (
     blocks_to_text,
 )
 from core.graph import build_research_graph
-from core.email_utils import send_digest
+from core.email_utils import send_digest, send_past_digest, select_past_pages
 
 # ---------------------------------------------------------------------------
 # Globals for signal handling
@@ -253,7 +254,11 @@ def run_research_cycle(
 
 
 def maybe_send_digest(logger: logging.Logger, email_hour: int) -> None:
-    """Send digest if current hour >= email_hour, not already sent today, and queue non-empty."""
+    """Send digest if current hour >= email_hour and not already sent today.
+
+    If the queue has new research, sends the normal digest.
+    If the queue is empty, selects 3 past researched pages and sends a reminder digest.
+    """
     now = datetime.now()
     if now.hour < email_hour:
         return
@@ -264,26 +269,62 @@ def maybe_send_digest(logger: logging.Logger, email_hour: int) -> None:
         logger.debug("Digest already sent today — skipping")
         return
 
-    queue = load_queue()
-    if not queue:
-        logger.debug("Digest skipped: queue is empty")
-        return
-
     gmail_user = os.environ.get("GMAIL_USER", "")
     gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD", "")
-
     if not gmail_user or not gmail_app_password:
         logger.warning("Digest skipped: GMAIL_USER or GMAIL_APP_PASSWORD not set")
         return
 
-    try:
-        send_digest(queue, gmail_user, gmail_app_password)
-        clear_queue()
-        config["last_digest_date"] = today
-        write_config(config)
-        logger.info("Digest sent to %s, queue cleared (%d records)", gmail_user, len(queue))
-    except Exception as exc:
-        logger.error("Failed to send digest: %s", exc)
+    queue = load_queue()
+    if queue:
+        try:
+            send_digest(queue, gmail_user, gmail_app_password)
+            clear_queue()
+            config["last_digest_date"] = today
+            write_config(config)
+            logger.info("Digest sent to %s, queue cleared (%d records)", gmail_user, len(queue))
+        except Exception as exc:
+            logger.error("Failed to send digest: %s", exc)
+    else:
+        # No new research today — send a past pages reminder instead
+        try:
+            notion = init_notion_client()
+            past_pages = fetch_past_researched_pages(notion)
+        except Exception as exc:
+            logger.error("Failed to fetch past pages from Notion: %s", exc)
+            return
+
+        if not past_pages:
+            logger.debug("Past digest skipped: no past researched pages available")
+            return
+
+        selected = select_past_pages(past_pages, n=3)
+        records = []
+        for p in selected:
+            page_id = p["id"]
+            page_title = get_page_title(p)
+            page_url = get_page_url(p)
+            try:
+                blocks = fetch_page_blocks_recursive(notion, page_id)
+                research_text = blocks_to_text(blocks)
+            except Exception as exc:
+                logger.warning("Could not fetch blocks for past page '%s': %s", page_title, exc)
+                research_text = None
+            records.append({
+                "title": page_title,
+                "url": page_url,
+                "research_text": research_text,
+                "cost": 0.0,
+                "processed_at": p.get("created_time", "")[:10],
+                "any_error": None,
+            })
+        try:
+            send_past_digest(records, gmail_user, gmail_app_password)
+            config["last_digest_date"] = today
+            write_config(config)
+            logger.info("Past digest sent to %s (%d pages)", gmail_user, len(page_dicts))
+        except Exception as exc:
+            logger.error("Failed to send past digest: %s", exc)
 
 
 # ---------------------------------------------------------------------------

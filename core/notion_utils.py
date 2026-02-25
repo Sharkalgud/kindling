@@ -130,6 +130,19 @@ def fetch_page_blocks_recursive(notion: NotionClient, block_id: str, depth: int 
     return blocks
 
 
+def fetch_past_researched_pages(notion: NotionClient) -> list:
+    """Fetch pages that have been researched: Kindling Research checked + Results block present."""
+    all_pages = fetch_research_pages(notion)
+    past = []
+    for page in all_pages:
+        try:
+            if has_kindling_results_block(notion, page["id"]):
+                past.append(page)
+        except Exception:
+            pass
+    return past
+
+
 def fetch_research_pages(notion: NotionClient) -> list:
     """Fetch all pages with the Kindling Research checkbox set in the Notion database."""
     pages = []

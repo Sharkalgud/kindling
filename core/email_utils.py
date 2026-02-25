@@ -1,5 +1,6 @@
 """Email digest utilities."""
 
+import random
 import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -210,8 +211,68 @@ def build_digest_html(queue: list) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Past pages: weighted selection + digest builders
+# ---------------------------------------------------------------------------
+
+
+def select_past_pages(pages: list, n: int = 3) -> list:
+    """Select n pages with linear decay weighting (newer pages have higher weight).
+
+    Given k pages sorted oldest→newest, the page at index i gets weight i+1,
+    so the oldest has 1/k the chance of the newest. Sampling is without replacement.
+    """
+    if len(pages) <= n:
+        return list(pages)
+
+    sorted_pages = sorted(pages, key=lambda p: p.get("created_time", ""))
+    pool = list(enumerate(sorted_pages))  # (original_index, page)
+    weights = [i + 1 for i in range(len(sorted_pages))]
+
+    selected = []
+    remaining = list(zip(weights, sorted_pages))
+    for _ in range(n):
+        total_weight = sum(w for w, _ in remaining)
+        r = random.uniform(0, total_weight)
+        cumulative = 0.0
+        for i, (w, page) in enumerate(remaining):
+            cumulative += w
+            if r <= cumulative:
+                selected.append(page)
+                remaining.pop(i)
+                break
+
+    return selected
+
+
+# ---------------------------------------------------------------------------
 # Send
 # ---------------------------------------------------------------------------
+
+
+def send_past_digest(
+    records: list,
+    gmail_user: str,
+    gmail_app_password: str,
+    recipient: str = DIGEST_RECIPIENT,
+) -> None:
+    """Send a past-pages reminder digest via Gmail SMTP with STARTTLS.
+
+    records should be in the same format as queue records so the same
+    digest builders can be reused.
+    """
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "A few past questions"
+    msg["From"] = gmail_user
+    msg["To"] = recipient
+
+    msg.attach(MIMEText(build_digest_text(records), "plain", "utf-8"))
+    msg.attach(MIMEText(build_digest_html(records), "html", "utf-8"))
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.login(gmail_user, gmail_app_password)
+        smtp.sendmail(gmail_user, [recipient], msg.as_string())
 
 
 def send_digest(

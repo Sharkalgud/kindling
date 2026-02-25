@@ -7,7 +7,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.email_utils import build_digest_text, extract_up_to_tldr
+from core.email_utils import (
+    build_digest_text,
+    extract_up_to_tldr,
+    select_past_pages,
+)
 
 # ---------------------------------------------------------------------------
 # Sample research text fixture
@@ -133,3 +137,60 @@ def test_build_digest_text_total_cost():
     ]
     body = build_digest_text(queue)
     assert "$0.0400" in body
+
+
+# ---------------------------------------------------------------------------
+# select_past_pages tests
+# ---------------------------------------------------------------------------
+
+
+def _make_page(title: str, created_time: str, url: str = "") -> dict:
+    return {"title": title, "created_time": created_time, "url": url}
+
+
+def test_select_past_pages_returns_all_when_fewer_than_n():
+    """When there are ≤ n pages, all are returned."""
+    pages = [_make_page("A", "2025-01-01"), _make_page("B", "2025-02-01")]
+    result = select_past_pages(pages, n=3)
+    assert len(result) == 2
+    titles = {p["title"] for p in result}
+    assert titles == {"A", "B"}
+
+
+def test_select_past_pages_returns_n_pages():
+    """Exactly n pages are returned when there are more than n."""
+    pages = [_make_page(str(i), f"2025-0{i}-01") for i in range(1, 8)]
+    result = select_past_pages(pages, n=3)
+    assert len(result) == 3
+
+
+def test_select_past_pages_no_duplicates():
+    """Selected pages are distinct (no page chosen twice)."""
+    pages = [_make_page(str(i), f"2025-0{i}-01") for i in range(1, 8)]
+    result = select_past_pages(pages, n=3)
+    titles = [p["title"] for p in result]
+    assert len(titles) == len(set(titles))
+
+
+def test_select_past_pages_exact_n_equals_pool():
+    """When pool size == n, all pages are returned."""
+    pages = [_make_page(str(i), f"2025-0{i}-01") for i in range(1, 4)]
+    result = select_past_pages(pages, n=3)
+    assert len(result) == 3
+
+
+def test_select_past_pages_newer_bias():
+    """Newer pages are selected more often than older ones across many trials."""
+    import random as _random
+    _random.seed(42)
+    pages = [_make_page(str(i), f"2025-0{i:02d}-01") for i in range(1, 7)]
+    # pages[0] is oldest, pages[5] is newest
+    counts = {p["title"]: 0 for p in pages}
+    for _ in range(300):
+        selected = select_past_pages(pages, n=3)
+        for p in selected:
+            counts[p["title"]] += 1
+    # The newest page should appear more than the oldest
+    assert counts["6"] > counts["1"]
+
+
