@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import socket
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -108,6 +109,47 @@ def remove_pid() -> None:
         PID_PATH.unlink()
     except OSError:
         pass
+
+
+def kill_existing_instances(logger: logging.Logger) -> None:
+    """Terminate any other running daemon.py processes before taking over."""
+    current_pid = os.getpid()
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "daemon.py"],
+            capture_output=True,
+            text=True,
+        )
+        pids = [
+            int(p) for p in result.stdout.split()
+            if p.strip() and int(p) != current_pid
+        ]
+    except Exception as exc:
+        logger.warning("Could not search for existing daemon instances: %s", exc)
+        return
+
+    if not pids:
+        return
+
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            logger.info("Sent SIGTERM to existing daemon instance (PID %d)", pid)
+        except ProcessLookupError:
+            pass
+        except Exception as exc:
+            logger.warning("Could not SIGTERM PID %d: %s", pid, exc)
+
+    time.sleep(2)
+
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+            logger.info("Sent SIGKILL to daemon instance that did not exit (PID %d)", pid)
+        except ProcessLookupError:
+            pass  # Already exited cleanly
+        except Exception as exc:
+            logger.warning("Could not SIGKILL PID %d: %s", pid, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +381,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGUSR1, _handle_sigusr1)
 
+    kill_existing_instances(logger)
     write_pid()
     try:
         anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
