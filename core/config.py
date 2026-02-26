@@ -5,6 +5,10 @@ import os
 import tempfile
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -20,7 +24,7 @@ LOG_PATH = DATA_DIR / "daemon.log"
 # LLM constants
 # ---------------------------------------------------------------------------
 
-NOTION_DB_ID = "2dfbad37f86a8084ab59f42395094f3e"
+NOTION_DB_ID = os.environ["NOTION_DB_ID"]
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
 GPT_MODEL = "gpt-5.2"
 HAIKU_COST_PER_M_INPUT = 0.80
