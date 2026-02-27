@@ -364,7 +364,7 @@ def maybe_send_digest(logger: logging.Logger, email_hour: int) -> None:
             send_past_digest(records, gmail_user, gmail_app_password)
             config["last_digest_date"] = today
             write_config(config)
-            logger.info("Past digest sent to %s (%d pages)", gmail_user, len(page_dicts))
+            logger.info("Past digest sent to %s (%d pages)", gmail_user, len(records))
         except Exception as exc:
             logger.error("Failed to send past digest: %s", exc)
 
